@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Дашборд: Валовая прибыль</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root{--bg:#0f172a;--card:#1a2438;--line:#2c3a55;--txt:#f1f5f9;--sec:#94a3b8;
+--ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--acc:#8b5cf6;--blu:#3b82f6}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:radial-gradient(circle at 10% 0%,#1b2550 0%,var(--bg) 45%);color:var(--txt);padding:20px;min-height:100vh}
+h1{font-size:26px;margin-bottom:4px}
+h1 span{color:var(--acc)}
+.sub{color:var(--sec);font-size:14px;margin-bottom:14px}
+#status{display:none;background:#7f1d1d;color:#fca5a5;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:14px;white-space:pre-wrap}
+.controls{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 16px;min-width:150px}
+.kpi span{display:block;font-size:12px;color:var(--sec)}
+.kpi b{font-size:18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+.card.wide{grid-column:1/-1}
+.card h3{font-size:15px;font-weight:600;margin-bottom:4px}
+.note{font-size:12px;color:var(--sec);margin-bottom:10px}
+.big{font-size:34px;font-weight:700;color:var(--txt)}
+.gauge{position:relative;height:200px}
+.bar-wrap{height:26px;background:#0d1424;border-radius:6px;margin-top:14px;position:relative;overflow:hidden}
+.bar-fill{height:100%;border-radius:6px;background:linear-gradient(90deg,#3b82f6,#8b5cf6)}
+.mark{position:absolute;top:-4px;width:2px;height:34px;background:#fff}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right}
+th{color:var(--sec);font-weight:600;text-align:right}
+td:first-child,th:first-child{text-align:left}
+tr.dept td{color:#c4b5fd;font-weight:700;background:#151f33}
+tr.total td{font-weight:700;background:#151f33}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.foot{margin-top:14px;color:var(--sec);font-size:12px}
+ul.zones{margin-top:8px;padding-left:18px;font-size:13px}
+ul.zones li{margin-bottom:4px}
+</style>
+</head>
+<body>
+<h1>Выполнение плана по <span>валовой прибыли</span></h1>
+<div class="sub" id="sub">загрузка данных из Google Sheets…</div>
+<div id="status"></div>
+
+<div class="controls">
+  <div class="kpi"><span>Дней в месяце</span><b id="d-total">—</b></div>
+  <div class="kpi"><span>Прошло дней</span><b id="d-passed">—</b></div>
+  <div class="kpi"><span>Осталось дней</span><b id="d-left">—</b></div>
+  <div class="kpi"><span>Норма выполнения на сегодня</span><b id="d-norm">—</b></div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>Выполнение плана компании</h3>
+    <div class="note">Белая отметка — норма на текущий рабочий день</div>
+    <div class="gauge"><canvas id="gauge"></canvas></div>
+    <div class="bar-wrap"><div class="bar-fill" id="bar" style="width:0%"></div><div class="mark" id="mark" style="left:0%"></div></div>
+  </div>
+
+  <div class="card">
+    <h3>План, факт и прогноз ВП по менеджерам</h3>
+    <div class="note">млн ₽, по убыванию плана</div>
+    <div class="gauge"><canvas id="mgr"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h3>% выполнения: факт и прогноз</h3>
+    <div class="note">пунктир — норма на сегодня и план 100%</div>
+    <div class="gauge"><canvas id="pct"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h3>Структура ПДЗ</h3>
+    <div class="note">доли менеджеров в просрочке, млн ₽</div>
+    <div class="gauge"><canvas id="pdz"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h3>Компания: план, факт, прогноз, ПДЗ</h3>
+    <div class="note">млн ₽, строка «Итого по компании»</div>
+    <table><tbody>
+      <tr><td>План</td><td class="warn" id="c-plan">—</td></tr>
+      <tr><td>Факт</td><td class="ok" id="c-fact">—</td></tr>
+      <tr><td>Прогноз</td><td id="c-prog">—</td></tr>
+      <tr><td>ПДЗ</td><td class="bad" id="c-pdz">—</td></tr>
+    </tbody></table>
+  </div>
+
+  <div class="card">
+    <h3>Сравнение отделов</h3>
+    <div class="note">млн ₽</div>
+    <div class="gauge"><canvas id="dept"></canvas></div>
+  </div>
+
+  <div class="card wide">
+    <h3>Зоны внимания</h3>
+    <ul class="zones" id="zones"></ul>
+  </div>
+
+  <div class="card wide">
+    <h3>Детализация по менеджерам</h3>
+    <div style="overflow-x:auto"><table id="detail"></table></div>
+  </div>
+</div>
+
+<div class="foot" id="foot"></div>
+
+<script>
+var SPREADSHEET_ID = '1aE1hYXgRzbEj7CwelMHCkOTkWc_A8p7uGE77xIJMTts';
+var CB = 'gsheet_cb_' + Date.now();
+
+function fail(msg){
+  var s = document.getElementById('status');
+  s.style.display = 'block';
+  s.textContent = 'Ошибка загрузки данных: ' + msg;
+  document.getElementById('sub').textContent = 'не удалось загрузить данные';
+}
+
+function num(v){
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  var s = String(v).replace(/\u00a0/g,'').replace(/\s/g,'').replace('%','');
+  if (!s) return null;
+  s = s.replace(',', '.');
+  var f = parseFloat(s);
+  return isFinite(f) ? f : null;
+}
+
+function fmtM(v){ // рубли -> млн
+  if (v === null || v === undefined) return '—';
+  return (v/1e6).toFixed(2).replace('.', ',');
+}
+function fmtP(v){ return v === null ? '—' : v.toFixed(1).replace('.', ',') + '%'; }
+
+window[CB] = function(resp){
+  try{
+    var cols = [], labels = [];
+    if (!resp || !resp.table || !resp.table.cols) throw new Error('пустой ответ Google');
+    resp.table.cols.forEach(function(c,i){
+      cols.push(c.label || '');
+      labels.push((c.label || 'К' + (i+1)).toLowerCase());
+    });
+    var rows = resp.table.rows.map(function(r){
+      return r.c.map(function(cell){ return cell ? (cell.v !== null && cell.v !== undefined ? cell.v : (cell.f !== undefined ? cell.f : null)) : null; });
+    });
+
+    // индексы столбцов по ключевым словам
+    function idx(){ for (var i=0;i<labels.length;i++){ var ok=true; for (var j=0;j<arguments.length;j++){ if (labels[i].indexOf(arguments[j])<0) ok=false; } if (ok) return i; } return -1; }
+    var iMgr = idx('менеджер');
+    if (iMgr < 0) iMgr = idx('фио');
+    if (iMgr < 0) iMgr = 1;
+    var iPlan = idx('план');
+    var iFact = idx('факт');
+    var iPdz = idx('пдз');
+    var iProg = idx('прогноз');
+
+    var managers = [], depts = {}, deptOrder = [], company = null, norm = null, days = {};
+
+    rows.forEach(function(r){
+      var text = r.map(function(c){return c===null?'':String(c);}).join(' ').toLowerCase();
+      if (text.indexOf('дней в месяце') >= 0){ for (var i=0;i<r.length;i++){ var v=num(r[i]); if (v && v<32){ days.total = v; break; } } return; }
+      if (text.indexOf('прошло') >= 0){ for (var i2=0;i2<r.length;i2++){ var v2=num(r[i2]); if (v2 !== null){ days.passed = v2; break; } } return; }
+      if (text.indexOf('осталось') >= 0){ for (var i3=0;i3<r.length;i3++){ var v3=num(r[i3]); if (v3 !== null){ days.left = v3; break; } } return; }
+      if (text.indexOf('должно быть') >= 0){ for (var i4=0;i4<r.length;i4++){ var v4=num(r[i4]); if (v4 !== null && v4 > 0){ norm = v4; break; } } return; }
+      if (text.indexOf('итого') >= 0){
+        if (text.indexOf('компани') >= 0){
+          company = { plan: iPlan>=0?num(r[iPlan]):null, fact: iFact>=0?num(r[iFact]):null,
+                      pdz: iPdz>=0?num(r[iPdz]):null, prog: iProg>=0?num(r[iProg]):null };
+        }
+        return; // итоги отдела не добавляем в менеджеры
+      }
+      if (text.indexOf('отдел') >= 0){
+        var dname = null;
+        for (var i5=0;i5<r.length;i5++){ if (r[i5] && String(r[i5]).toLowerCase().indexOf('отдел')>=0){ dname = String(r[i5]).trim(); break; } }
+        if (dname){ cur = dname; if (!(dname in depts)){ depts[dname] = []; deptOrder.push(dname); } }
+        return;
+      }
+      var cur = window.__curDept || null;
+      var name = iMgr>=0 ? r[iMgr] : null;
+      if (name === null || String(name).trim() === '') return;
+      var m = { name: String(name).trim(),
+                plan: iPlan>=0?num(r[iPlan]):null,
+                fact: iFact>=0?num(r[iFact]):null,
+                pdz: iPdz>=0?num(r[iPdz]):null,
+                prog: iProg>=0?num(r[iProg]):null };
+      if (m.plan===null && m.fact===null && m.pdz===null) return;
+      m.dept = cur;
+      managers.push(m);
+    });
+
+    render(managers, depts, deptOrder, company, norm, days);
+  } catch(e){
+    fail(e.message);
+    console.error(e);
+  }
+};
+
+function jsonp(url){
+  var s = document.createElement('script');
+  s.src = url;
+  s.onerror = function(){ fail('Google недоступен или таблица закрыта. Проверьте доступ «Все, у кого есть ссылка» → «Читатель».'); };
+  document.body.appendChild(s);
+  setTimeout(function(){ if (!window.__loaded){ fail('Google не отвечает дольше 20 секунд. Проверьте интернет и доступ к таблице.'); } }, 20000);
+}
+
+function render(managers, depts, deptOrder, company, norm, days){
+  window.__loaded = true;
+  document.getElementById('sub').textContent = 'данные из Google Sheets · менеджеров: ' + managers.length + ' · отделов: ' + deptOrder.length;
+
+  document.getElementById('d-total').textContent = days.total !== undefined ? days.total : '—';
+  document.getElementById('d-passed').textContent = days.passed !== undefined ? days.passed : '—';
+  document.getElementById('d-left').textContent = days.left !== undefined ? days.left : '—';
+  document.getElementById('d-norm').textContent = fmtP(norm);
+
+  var hasDept = deptOrder.length > 0;
+  managers.forEach(function(m){ if (!m.dept) m.dept = hasDept ? 'Без отдела' : ''; });
+
+  // план/факт компании: из строки «Итого по компании», иначе сумма
+  var sumPlan = 0, sumFact = 0, sumPdz = 0;
+  managers.forEach(function(m){ sumPlan += m.plan||0; sumFact += m.fact||0; sumPdz += m.pdz||0; });
+  var cPlan = company && company.plan !== null ? company.plan : sumPlan;
+  var cFact = company && company.fact !== null ? company.fact : sumFact;
+  var cPdz  = company && company.pdz  !== null ? company.pdz  : sumPdz;
+
+  // прогноз: из столбца, иначе экстраполяция
+  var cProg = company && company.prog !== null ? company.prog : null;
+  if (cProg === null && days.passed){
+    cProg = days.passed > 0 ? cFact / (days.passed / days.total) : cFact;
+  }
+
+  var pctFact = cPlan ? (cFact/cPlan*100) : 0;
+  var pctProg = cPlan ? (cProg/cPlan*100) : 0;
+
+  // гейдж
+  new Chart(document.getElementById('gauge'), {
+    type: 'doughnut',
+    data: { datasets: [{ data: [Math.min(pctFact,100), Math.max(0,100-Math.min(pctFact,100))],
+      backgroundColor: [pctFact >= (norm||0) ? '#22c55e' : '#f59e0b', '#0d1424'], borderWidth: 0, circumference: 270, rotation: 225 }] },
+    options: { cutout: '72%', plugins: { legend: {display:false}, tooltip: {enabled:false} } },
+    plugins: [{ id:'txt', afterDraw: function(c){
+      var ctx = c.ctx, w = c.width, h = c.height;
+      ctx.save(); ctx.textAlign = 'center'; ctx.fillStyle = '#f1f5f9';
+      ctx.font = '700 34px Segoe UI'; ctx.fillText(pctFact.toFixed(1).replace('.',',')+'%', w/2, h/2);
+      ctx.font = '13px Segoe UI'; ctx.fillStyle = '#94a3b8';
+      ctx.fillText('из плана ' + fmtM(cPlan) + ' млн', w/2, h/2+22); ctx.restore();
+    }}]
+  });
+  var markPos = norm ? Math.min(norm/100*100, 100) : 0; // белая отметка в процентах шкалы = норма
+  document.getElementById('mark').style.left = Math.min(norm||0,100) + '%';
+  document.getElementById('bar').style.width = Math.min(pctFact,100) + '%';
+
+  // менеджеры: план/факт/прогноз, сортировка по плану
+  var sorted = managers.slice().sort(function(a,b){ return (b.plan||0)-(a.plan||0); });
+  new Chart(document.getElementById('mgr'), {
+    type: 'bar',
+    data: { labels: sorted.map(function(m){return m.name;}),
+      datasets: [
+        { label:'План', data: sorted.map(function(m){return (m.plan||0)/1e6;}), backgroundColor:'#f59e0b', borderRadius:4 },
+        { label:'Факт', data: sorted.map(function(m){return (m.fact||0)/1e6;}), backgroundColor:'#22c55e', borderRadius:4 },
+        { label:'Прогноз', data: sorted.map(function(m){return (m.prog !== null && m.prog !== undefined ? m.prog : (m.fact||0))/(m.fact||0)>0?((m.prog||((m.fact||0)*(days.total&&days.passed?days.total/days.passed:1)))/1e6):0;}), backgroundColor:'#8b5cf6', borderRadius:4 }
+      ] },
+    options: { indexAxis:'y', maintainAspectRatio:false,
+      plugins:{ legend:{ labels:{ color:'#94a3b8', boxWidth:12 } } },
+      scales:{ x:{ ticks:{ color:'#94a3b8' }, grid:{ color:'#1e293b' } },
+               y:{ ticks:{ color:'#f1f5f9', font:{size:11} }, grid:{ display:false } } } }
+  });
+
+  // % выполнения по менеджерам
+  new Chart(document.getElementById('pct'), {
+    type: 'bar',
+    data: { labels: sorted.map(function(m){return m.name;}),
+      datasets: [
+        { label:'Факт, %', data: sorted.map(function(m){return m.plan? (m.fact||0)/m.plan*100 : 0;}), backgroundColor:'#3b82f6', borderRadius:4 },
+        { label:'Прогноз, %', data: sorted.map(function(m){return m.plan? ((m.prog!==null&&m.prog!==undefined?m.prog:(m.fact||0)*(days.total&&days.passed?days.total/days.passed:1)))/m.plan*100 : 0;}), backgroundColor:'#8b5cf6', borderRadius:4 }
+      ] },
+    options: { maintainAspectRatio:false,
+      plugins:{ legend:{ labels:{ color:'#94a3b8', boxWidth:12 } } },
+      scales:{ x:{ ticks:{ color:'#94a3b8', font:{size:10}, maxRotation:60, minRotation:45 }, grid:{ display:false } },
+               y:{ ticks:{ color:'#94a3b8', callback:function(v){return v+'%';} }, grid:{ color:'#1e293b' } } } }
+  });
+
+  // ПДЗ: доли
+  var withPdz = managers.filter(function(m){ return (m.pdz||0) > 0; }).sort(function(a,b){ return (b.pdz||0)-(a.pdz||0); });
+  var palette = ['#ef4444','#f59e0b','#8b5cf6','#3b82f6','#22c55e','#ec4899','#14b8a6','#eab308','#f97316','#a855f7','#64748b'];
+  new Chart(document.getElementById('pdz'), {
+    type: 'doughnut',
+    data: { labels: withPdz.map(function(m){return m.name;}),
+      datasets: [{ data: withPdz.map(function(m){return (m.pdz||0)/1e6;}),
+        backgroundColor: withPdz.map(function(m,i){return palette[i%palette.length];}), borderWidth: 0 }] },
+    options: { maintainAspectRatio:false, cutout:'55%',
+      plugins:{ legend:{ position:'right', labels:{ color:'#94a3b8', boxWidth:10, font:{size:10} } } } }
+  });
+
+  // карточки компании
+  document.getElementById('c-plan').textContent = fmtM(cPlan);
+  document.getElementById('c-fact').textContent = fmtM(cFact);
+  document.getElementById('c-prog').textContent = fmtM(cProg);
+  document.getElementById('c-pdz').textContent = fmtM(cPdz);
+
+  // отделы
+  var dnames = deptOrder.length ? deptOrder : ['Всего'];
+  new Chart(document.getElementById('dept'), {
+    type: 'bar',
+    data: { labels: dnames,
+      datasets: [
+        { label:'План', data: dnames.map(function(d){
+            var arr = depts[d] || [];
+            var s = 0; arr.forEach(function(m){ s += m.plan||0; }); return s/1e6; }), backgroundColor:'#f59e0b', borderRadius:4 },
+        { label:'Факт', data: dnames.map(function(d){
+            var arr = depts[d] || [];
+            var s = 0; arr.forEach(function(m){ s += m.fact||0; }); return s/1e6; }), backgroundColor:'#22c55e', borderRadius:4 }
+      ] },
+    options: { maintainAspectRatio:false,
+      plugins:{ legend:{ labels:{ color:'#94a3b8', boxWidth:12 } } },
+      scales:{ x:{ ticks:{ color:'#f1f5f9' }, grid:{ display:false } },
+               y:{ ticks:{ color:'#94a3b8' }, grid:{ color:'#1e293b' } } } }
+  });
+
+  // зоны внимания
+  var zones = [];
+  if (norm !== null && pctFact < norm){
+    zones.push('Компания отстаёт от нормы на сегодня: ' + fmtP(pctFact) + ' при норме ' + fmtP(norm) + '.');
+  }
+  managers.forEach(function(m){
+    var p = m.plan ? (m.fact||0)/m.plan*100 : null;
+    if (p !== null && norm !== null && p < norm){
+      zones.push(m.name + (m.dept? ' ('+m.dept+')':'') + ': факт ' + fmtP(p) + ' — ниже нормы ' + fmtP(norm) + '.');
+    }
+  });
+  if (cPdz > 0){
+    zones.push('ПДЗ по компании: ' + fmtM(cPdz) + ' млн ₽. Лидер по просрочке: ' + (withPdz.length ? withPdz[0].name + ' — ' + fmtM(withPdz[0].pdz) + ' млн ₽' : '—') + '.');
+  }
+  var z = document.getElementById('zones');
+  z.innerHTML = zones.length ? zones.map(function(t){ return '<li>' + t + '</li>'; }).join('')
+                             : '<li>Все показатели в норме ✓</li>';
+
+  // детализация
+  var t = '<thead><tr><th>Менеджер</th><th>Отдел</th><th>План ВП</th><th>Факт</th><th>Прогноз</th><th>% факт</th><th>ПДЗ</th></tr></thead><tbody>';
+  sorted.forEach(function(m){
+    var p = m.plan ? (m.fact||0)/m.plan*100 : null;
+    var cls = p === null ? '' : (p >= 100 ? 'ok' : (norm !== null && p < norm ? 'bad' : 'warn'));
+    var prog = m.prog !== null && m.prog !== undefined ? m.prog : (m.fact||0)*(days.total&&days.passed?days.total/days.passed:1);
+    t += '<tr><td>' + m.name + '</td><td>' + (m.dept||'—') + '</td>'
+       + '<td>' + fmtM(m.plan) + '</td><td>' + fmtM(m.fact) + '</td><td>' + fmtM(prog) + '</td>'
+       + '<td class="' + cls + '">' + (p===null?'—':fmtP(p)) + '</td><td class="bad">' + fmtM(m.pdz) + '</td></tr>';
+  });
+  if (company){
+    t += '<tr class="total"><td>Итого по компании</td><td>—</td><td>' + fmtM(cPlan) + '</td><td>' + fmtM(cFact) + '</td><td>' + fmtM(cProg) + '</td><td>' + fmtP(pctFact) + '</td><td>' + fmtM(cPdz) + '</td></tr>';
+  }
+  t += '</tbody>';
+  document.getElementById('detail').innerHTML = t;
+
+  document.getElementById('foot').textContent = 'Менеджеров: ' + managers.length + ' · отделов: ' + deptOrder.length + ' · данные из Google Sheets · обновлено: ' + new Date().toLocaleTimeString('ru-RU');
+}
+
+// запуск
+(function(){
+  var url = 'https://docs.google.com/spreadsheets/d/' + SPREADSHEET_ID +
+            '/gviz/tq?tqx=out:json;responseHandler:' + CB + '&sheet=Лист1&headers=1';
+  jsonp(url);
+})();
+</script>
+</body>
+</html>
