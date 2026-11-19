@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Дашборд: Валовая прибыль</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent: #6366f1;
+            --danger: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        h1 { margin-bottom: 5px; font-size: 24px; }
+        .subtitle { color: var(--text-secondary); font-size: 14px; margin-bottom: 20px; }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .control-box {
+            background: var(--card-bg);
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            min-width: 150px;
+        }
+
+        .control-box span { display: block; font-size: 12px; color: var(--text-secondary); }
+        .control-box strong { font-size: 16px; }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #334155;
+        }
+
+        .card h3 { margin-top: 0; font-size: 16px; color: var(--text-secondary); margin-bottom: 15px; }
+        
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: var(--accent);
+        }
+
+        .chart-placeholder {
+            height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            background: #161e35;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+
+        .status-bar {
+            background-color: var(--danger);
+            color: white;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+    </style>
+    <!-- Подключаем Chart.js для графиков -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+    <h1>Выполнение плана по <span style="color: var(--accent)">валовой прибыли</span></h1>
+    <p class="subtitle">загрузка данных из Google Sheets...</p>
+
+    <div id="status-bar" class="status-bar" style="display:none;">Ошибка загрузки данных. Проверьте консоль.</div>
+
+    <div class="controls">
+        <div class="control-box">
+            <span>Рабочие дни</span>
+            <strong id="days-work">—</strong>
+        </div>
+        <div class="control-box">
+            <span>Осталось дней</span>
+            <strong id="days-left">—</strong>
+        </div>
+        <div class="control-box">
+            <span>Норма на сегодня</span>
+            <strong id="norm-today">—</strong>
+        </div>
+    </div>
+
+    <div class="grid">
+        <!-- Блок 1: Выполнение плана компании -->
+        <div class="card">
+            <h3>Выполнение плана компании</h3>
+            <div class="stat-value" id="plan-company-val">—</div>
+            <p style="font-size:12px; color:var(--text-secondary);">Белая отметка — норма на текущий рабочий день</p>
+            <div class="chart-placeholder" id="chart-company">График строится...</div>
+        </div>
+
+        <!-- Блок 2: План/Факт по менеджерам -->
+        <div class="card">
+            <h3>План, факт и прогноз ВП по менеджерам</h3>
+            <p style="font-size:12px; color:var(--text-secondary);">млн ₽, по убыванию плана</p>
+            <div id="managers-list" style="font-size:14px; margin-top:10px;"></div>
+        </div>
+
+        <!-- Блок 3: % выполнения -->
+        <div class="card">
+            <h3>% выполнения: факт и прогноз</h3>
+            <p style="font-size:12px; color:var(--text-secondary);">Пунктир: норма на сегодня и план 100%</p>
+            <div class="chart-placeholder" id="chart-percent">График строится...</div>
+        </div>
+
+        <!-- Блок 4: Структура ПДЗ -->
+        <div class="card">
+            <h3>Структура ПДЗ</h3>
+            <p style="font-size:12px; color:var(--text-secondary);">Доли менеджеров в просрочке</p>
+            <div class="chart-placeholder" id="chart-pdz">График строится...</div>
+        </div>
+
+        <!-- Блок 5: Компания: план, факт, прогноз, ПДЗ -->
+        <div class="card">
+            <h3>Компания: план, факт, прогноз, ПДЗ</h3>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">
+                <div>
+                    <div style="font-size:12px; color:var(--text-secondary)">План</div>
+                    <div class="stat-value" style="font-size:20px; color:var(--warning)">—</div>
+                </div>
+                <div>
+                    <div style="font-size:12px; color:var(--text-secondary)">Факт</div>
+                    <div class="stat-value" style="font-size:20px; color:var(--success)">—</div>
+                </div>
+                <div>
+                    <div style="font-size:12px; color:var(--text-secondary)">Прогноз</div>
+                    <div class="stat-value" style="font-size:20px; color:var(--accent)">—</div>
+                </div>
+                <div>
+                    <div style="font-size:12px; color:var(--text-secondary)">ПДЗ</div>
+                    <div class="stat-value" style="font-size:20px; color:var(--danger)">—</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- НАСТРОЙКИ ---
+        const SPREADSHEET_ID = '1aE1hYXgRzbEj7CwelMHCkOTkWc_A8p7uGE77xIJMTts';
+        const SHEET_NAME = 'Лист1'; // Имя вкладки в таблице
+        
+        // --- ЛОГИКА ЗАГРУЗКИ ---
+        async function loadData() {
+            const statusBar = document.getElementById('status-bar');
+            statusBar.style.display = 'none';
+
+            try {
+                // Формируем URL для получения JSON из Google Sheets (Google Visualization API)
+                const url = `https://spreadsheets.google.com/feeds/list/${SPREADSHEET_ID}/${SHEET_NAME}/public/values?alt=json`;
+                
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error('Таблица недоступна. Проверьте доступ "Все, у кого есть ссылка" -> Читатель.');
+                }
+
+                const data = await response.json();
+                processData(data.feed.entry);
+
+            } catch (error) {
+                console.error(error);
+                statusBar.style.display = 'block';
+                statusBar.innerText = 'Ошибка: ' + error.message;
+            }
+        }
+
+        // --- ОБРАБОТКА ДАННЫХ ---
+        function processData(entries) {
+            // Здесь должна быть логика парсинга ваших колонок.
+            // Так как я не вижу названия колонок в вашей таблице, я оставлю заглушки.
+            // Вам нужно будет сопоставить названия колонок из таблицы с переменными ниже.
+            
+            // ПРИМЕР: если в таблице колонка называется "План ВП", то в коде ищем entry.gsx$планвп.$t
+            // Google конвертирует заголовки в нижний регистр и убирает пробелы для ключей gsx\$...
+
+            let totalPlan = 0;
+            let totalFact = 0;
+            let totalPdz = 0;
+            let managers = ;
+
+            entries.forEach(entry => {
+                // ВАЖНО: Замените 'gsx\$план' и т.д. на реальные названия ваших колонок (в нижнем регистре, без пробелов)
+                // Пример: если колонка "План ВП", ключ будет gsx$планвп.$t
+                
+                const plan = parseFloat(entry.gsx$план.$t) || 0; // <-- ИЗМЕНИТЬ
+                const fact = parseFloat(entry.gsx$факт.$t) || 0; // <-- ИЗМЕНИТЬ
+                const pdz = parseFloat(entry.gsx$пдз.$t) || 0;  // <-- ИЗМЕНИТЬ
+                const manager = entry.gsx$менеджер.$t || 'Без имени'; // <-- ИЗМЕНИТЬ
+
+                totalPlan += plan;
+                totalFact += fact;
+                totalPdz += pdz;
+
+                managers.push({
+                    name: manager,
+                    plan: plan,
+                    fact: fact,
+                    pdz: pdz
+                });
+            });
+
+            // Расчет процентов
+            const percent = totalPlan > 0 ? ((totalFact / totalPlan) * 100).toFixed(1) : 0;
+            
+            // Обновление UI
+            document.getElementById('plan-company-val').innerText = percent + '%';
+            document.querySelectorAll('.stat-value').innerText = totalPlan.toLocaleString(); // План
+            document.querySelectorAll('.stat-value').innerText = totalFact.toLocaleString(); // Факт
+            document.querySelectorAll('.stat-value').innerText = totalPdz.toLocaleString(); // ПДЗ
+            
+            // Список менеджеров
+            const listEl = document.getElementById('managers-list');
+            listEl.innerHTML = managers.map(m => 
+                `<div style="display:flex; justify-content:space-between; border-bottom:1px solid #334155; padding:5px 0;">
+                    <span>\${m.name}</span>
+                    <span>${m.fact.toLocaleString()} / ${m.plan.toLocaleString()}</span>
+                 </div>`
+            ).join('');
+
+            // Заглушки для графиков (нужно инициализировать Chart.js)
+            initChart('chart-company', ['План', 'Факт'], [totalPlan, totalFact], ['#f59e0b', '#10b981']);
+            initChart('chart-percent', ['Факт', 'Прогноз'], [percent, 105], ['#6366f1', '#8b5cf6']);
+            initChart('chart-pdz', ['ПДЗ', 'Норма'], [totalPdz, 1000000], ['#ef4444', '#334155']);
+
+            // Расчет рабочих дней (упрощенно: берем текущую дату)
+            const today = new Date();
+            const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+            const workDays = Math.round(daysInMonth * 0.7); // ~70% рабочих дней
+            document.getElementById('days-work').innerText = workDays;
+            document.getElementById('days-left').innerText = workDays - today.getDate();
+            document.getElementById('norm-today').innerText = (totalPlan / workDays).toLocaleString();
+        }
+
+        // --- ФУНКЦИЯ СОЗДАНИЯ ГРАФИКА ---
+        function initChart(containerId, labels, dataValues, colors) {
+            const ctx = document.getElementById(containerId).getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Значения',
+                        data: dataValues,
+                        backgroundColor: colors,
+                        borderRadius: 5,
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        }
+
+        // Запуск
+        loadData();
+    </script>
+</body>
+</html>
